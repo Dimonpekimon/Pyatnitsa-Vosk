@@ -878,6 +878,37 @@ def main() -> int:
     check("есть запасная модель", bool(config.GEMINI_FALLBACK_MODELS), True)
     check("markdown вычищается из ответа", brain.plain_text("**привет**, сэр"), "привет, сэр")
 
+    # ---------------- Обход выключенного прокси ----------------
+    section("Мозг: выключенный прокси не блокирует шлюз")
+
+    class _StubResponse:
+        status_code = 200
+
+        def json(self):
+            return {}
+
+    class _StubSession:
+        def __init__(self):
+            self.calls = 0
+
+        def request(self, *args, **kwargs):
+            self.calls += 1
+            return _StubResponse()
+
+    def dead_proxy(*args, **kwargs):
+        raise brain.requests.exceptions.ProxyError("прокси не отвечает")
+
+    probe = brain.Brain()
+    probe._session.request = dead_proxy
+    stub = _StubSession()
+    probe._direct = stub
+    answer = probe._send("POST", "https://example.invalid/v1/chat/completions")
+    check("при мёртвом прокси запрос повторяется напрямую", answer.status_code, 200)
+    check("...напрямую сходили ровно один раз", stub.calls, 1)
+
+    fresh = brain.Brain()
+    check("при живом прокси запасной сеанс не создаётся", fresh._direct, None)
+
     # ---------------- Озвучка Piper ----------------
     section("Озвучка: Piper основной")
     check("движок по умолчанию — piper", config.TTS_ENGINE, "piper")

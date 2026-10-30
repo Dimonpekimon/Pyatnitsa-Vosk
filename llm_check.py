@@ -26,6 +26,7 @@ import requests
 
 # (название, база до /v1, дешёвая модель для проверки)
 PROVIDERS = [
+    ("aiai.by", "https://api.aiai.by/v1", "gemini-3.5-flash-lite"),
     ("polza.ai", "https://api.polza.ai/v1", "openai/gpt-5-mini"),
     ("OpenRouter", "https://openrouter.ai/api/v1", "google/gemini-2.5-flash"),
     ("VseGPT", "https://api.vsegpt.ru/v1", "openai/gpt-4o-mini"),

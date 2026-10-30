@@ -73,6 +73,8 @@ class Brain:
         # Gemini — внешний сервис, поэтому системный прокси здесь как раз нужен
         # (в отличие от прежней локальной Ollama, где он всё ломал).
         self._session.trust_env = True
+        # Запасной сеанс без прокси. Создаётся только если прокси не ответил.
+        self._direct: requests.Session | None = None
         self._available: bool | None = None
         self._models: list = []
         self._probe_after = 0.0
@@ -80,6 +82,29 @@ class Brain:
         # Некоторые модели (например, flash-lite) не принимают thinkingConfig.
         # После первого отказа запоминаем это и больше не мешаем запрос.
         self._thinking_supported = True
+
+    def _direct_session(self) -> requests.Session:
+        """Сеанс в обход прокси — создаётся при первом обращении."""
+        if self._direct is None:
+            session = requests.Session()
+            session.trust_env = False      # игнорировать HTTPS_PROXY и настройки Windows
+            self._direct = session
+        return self._direct
+
+    def _send(self, method: str, url: str, **kwargs):
+        """Запрос с запасным путём: если прокси не ответил — идём напрямую.
+
+        ``requests`` берёт прокси из переменных окружения (``HTTPS_PROXY``) и
+        системных настроек Windows. Если прокси-сервер выключили, а настройка
+        осталась, каждый запрос падает с ``ProxyError`` — хотя шлюз напрямую
+        прекрасно доступен. «Не достучались до самого прокси» означает, что
+        прокси мёртв, поэтому обход — не риск, а единственный шанс ответить.
+        """
+        try:
+            return self._session.request(method, url, **kwargs)
+        except requests.exceptions.ProxyError:
+            pass
+        return self._direct_session().request(method, url, **kwargs)
 
     # ------------------------------------------------------------------
     #  Ключ и доступность
@@ -120,7 +145,8 @@ class Brain:
         if self.provider == "openai":
             return self._available_models_openai()
         try:
-            response = self._session.get(
+            response = self._send(
+                "GET",
                 f"{self.api_base}/models",
                 params={"key": self.api_key},
                 timeout=10,
@@ -178,7 +204,8 @@ class Brain:
     def _available_models_openai(self) -> list:
         """То же для OpenAI-совместимого шлюза: GET {base}/models + Bearer."""
         try:
-            response = self._session.get(
+            response = self._send(
+                "GET",
                 f"{self.api_base}/models",
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 timeout=10,
@@ -324,8 +351,8 @@ class Brain:
         key = self._require_key()
         url = f"{self.api_base}/models/{model}:generateContent"
         try:
-            response = self._session.post(
-                url, params={"key": key}, json=payload,
+            response = self._send(
+                "POST", url, params={"key": key}, json=payload,
                 timeout=float(config.GEMINI_TIMEOUT),
             )
         except requests.exceptions.Timeout as exc:
@@ -341,8 +368,8 @@ class Brain:
             # Бесплатный тариф считает запросы в минуту: короткая пауза помогает.
             time.sleep(1.5)
             try:
-                response = self._session.post(
-                    url, params={"key": key}, json=payload,
+                response = self._send(
+                    "POST", url, params={"key": key}, json=payload,
                     timeout=float(config.GEMINI_TIMEOUT),
                 )
             except requests.exceptions.RequestException as exc:
@@ -425,8 +452,8 @@ class Brain:
         }
 
         def send():
-            return self._session.post(
-                url, headers=headers, json=payload,
+            return self._send(
+                "POST", url, headers=headers, json=payload,
                 timeout=float(config.GEMINI_TIMEOUT),
             )
 
@@ -582,13 +609,30 @@ class Brain:
 #  Вспомогательные функции
 # =====================================================================
 def _error_text(response) -> str:
-    """Достаёт человекочитаемое сообщение из ответа об ошибке."""
+    """Достаёт человекочитаемое сообщение из ответа об ошибке.
+
+    Формат у шлюзов разный: OpenAI — ``{"error": {"message": ...}}``,
+    aiai.by — ``{"error": "insufficient balance..."}`` (строка), кто-то
+    отвечает просто текстом. Строку раньше не разбирали, и на 402 «нет
+    средств» ассистент падал с AttributeError вместо внятной фразы.
+    """
     try:
         data = response.json()
-        message = str((data.get("error") or {}).get("message", ""))
     except ValueError:
-        message = (response.text or "")[:200]
-    return message or f"ошибка {response.status_code}"
+        data = None
+    message = ""
+    if isinstance(data, dict):
+        error = data.get("error")
+        if isinstance(error, dict):
+            message = str(error.get("message") or error.get("code") or "")
+        elif isinstance(error, str):
+            message = error
+        if not message:
+            message = str(data.get("message") or data.get("detail") or "")
+    elif isinstance(data, str):
+        message = data
+    message = message.strip() or (response.text or "").strip()[:200]
+    return message[:300] or f"ошибка {response.status_code}"
 
 
 REGION_BLOCK_HINT = (

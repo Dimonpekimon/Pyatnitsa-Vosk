@@ -71,6 +71,10 @@ class _Handler(BaseHTTPRequestHandler):
 
         status = self.server.state["status"]
         if status == 402:
+            if self.server.state.get("error_style") == "string":
+                # Так отвечает aiai.by: error — не объект, а строка.
+                self._reply(402, {"error": "insufficient balance: have 0.0090 byn"})
+                return
             self._reply(402, {"error": {"code": "INSUFFICIENT_BALANCE",
                                         "message": "Недостаточно средств"}})
             return
@@ -174,6 +178,16 @@ class GatewayTestCase(unittest.TestCase):
         with self.assertRaises(brain.BrainUnavailable) as ctx:
             brain.Brain().ask("ну")
         self.assertIn("средств", str(ctx.exception))
+
+    def test_no_balance_as_plain_string(self):
+        """aiai.by кладёт error строкой — раньше это давало AttributeError."""
+        self.server.state["status"] = 402
+        self.server.state["error_style"] = "string"
+        with self.assertRaises(brain.BrainUnavailable) as ctx:
+            brain.Brain().ask("ну")
+        message = str(ctx.exception)
+        self.assertIn("средств", message)
+        self.assertIn("insufficient balance", message)
 
     def test_unknown_model_falls_back(self):
         config.LLM_MODEL = "gone"
