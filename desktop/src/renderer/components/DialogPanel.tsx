@@ -23,6 +23,7 @@ interface Props {
   dialogWindow: number;
   /** Требуется ли обращение («--no-wake» снимает требование). */
   wakeRequired: boolean;
+  voice: boolean;
   onSubmit: (text: string) => void;
   onInterrupt: () => void;
   onReset: () => void;
@@ -42,6 +43,7 @@ export default function DialogPanel(props: Props): JSX.Element {
     dialogUntil,
     dialogWindow,
     wakeRequired,
+    voice,
     onSubmit,
     onInterrupt,
     onReset,
@@ -105,7 +107,7 @@ export default function DialogPanel(props: Props): JSX.Element {
 
       {/* Живая подсказка: нужен ли сейчас оклик. Стоит выше истории, чтобы
           её было видно, не отвлекаясь от переписки. */}
-      <WakeCue variant="dialog" until={dialogUntil} wakeRequired={wakeRequired} windowSec={dialogWindow} />
+      <WakeCue variant="dialog" until={dialogUntil} wakeRequired={wakeRequired} voice={voice} windowSec={dialogWindow} />
 
       <div className="messages" ref={listRef} data-hit="1">
         {messages.length === 0 && (

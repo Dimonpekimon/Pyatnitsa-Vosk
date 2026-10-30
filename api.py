@@ -445,6 +445,9 @@ def _make_handler(pyatnitsa, dispatcher: Dispatcher):
             try:
                 self._event({"type": "hello", "state": events.current_state(),
                              "wake": bool(getattr(config, "WAKE_WORD_REQUIRED", True)),
+                             # В текстовом режиме микрофона нет: подсказка про
+                             # оклик вводила бы в заблуждение.
+                             "voice": getattr(pyatnitsa, "mode", "voice") != "text",
                              "until": float(getattr(pyatnitsa, "dialog_deadline", 0.0) or 0.0),
                              "status": safe_status(pyatnitsa)})
                 while True:

@@ -855,6 +855,35 @@ class Actions:
             return "Не удалось перейти в спящий режим, сэр."
         return f"Перехожу в спящий режим через {int(delay)} секунду, сэр."
 
+    def processor(self) -> str:
+        """Имя процессора и число логических ядер.
+
+        ``platform.processor()`` на Windows отдаёт «Intel64 Family 6 Model…»,
+        по чему модель не узнать, поэтому берём строку из реестра — там она
+        ровно такая, как в «Свойствах системы».
+        """
+        name = ""
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
+            ) as key:
+                name = str(winreg.QueryValueEx(key, "ProcessorNameString")[0])
+        except (OSError, ImportError):
+            import platform
+
+            name = platform.processor() or ""
+        name = re.sub(r"\s+", " ", name).strip()
+        cores = os.cpu_count() or 0
+        if not name:
+            return (f"Процессор: {cores} логических ядер." if cores
+                    else "Процессор не определён, сэр.")
+        if cores:
+            return f"Процессор — {name}, {cores} логических ядер."
+        return f"Процессор — {name}."
+
     def system_info(self) -> str:
         """Краткая сводка о компьютере одним ответом.
 
@@ -862,6 +891,7 @@ class Actions:
         обращается к экземпляру.
         """
         return " ".join([
+            self.processor(),
             self.memory(),
             self.disk_space(),
             self.uptime(),
@@ -1043,11 +1073,101 @@ class Actions:
                 index[stem_ru(alias)] = ("temp", 0.0, short)
         return index
 
+    #: Названия валют для ответа: (один, два-четыре, много).
+    _MONEY_NAMES = {
+        "RUB": ("рубль", "рубля", "рублей"),
+        "USD": ("доллар", "доллара", "долларов"),
+        "EUR": ("евро", "евро", "евро"),
+        "CNY": ("юань", "юаня", "юаней"),
+        "GBP": ("фунт", "фунта", "фунтов"),
+        "KZT": ("тенге", "тенге", "тенге"),
+        "UAH": ("гривна", "гривны", "гривен"),
+        "TRY": ("лира", "лиры", "лир"),
+        "JPY": ("иена", "иены", "иен"),
+        "CHF": ("франк", "франка", "франков"),
+        "BYN": ("белорусский рубль", "белорусских рубля", "белорусских рублей"),
+    }
+
+    @classmethod
+    def _currency_code(cls, word: str) -> str | None:
+        """Код валюты по слову фразы: «долларов» -> USD, «рублях» -> RUB."""
+        if word.startswith(("рубл", "руб")):
+            return "RUB"
+        for alias, code in cls._CURRENCY_ALIASES.items():
+            if word.startswith(alias):
+                return code
+        return None
+
+    def _cbr_rates(self) -> dict[str, float]:
+        """Курсы ЦБ в рублях за единицу валюты. Пусто — если сервис молчит."""
+        data = _http_json("https://www.cbr-xml-daily.ru/daily_json.js", 5.0, attempts=2)
+        valute = (data or {}).get("Valute") or {}
+        rates: dict[str, float] = {"RUB": 1.0}
+        for code, item in valute.items():
+            try:
+                nominal = float(item.get("Nominal") or 1) or 1.0
+                rates[code] = float(item["Value"]) / nominal
+            except (KeyError, TypeError, ValueError):
+                continue
+        return rates if len(rates) > 1 else {}
+
+    @classmethod
+    def _money_word(cls, amount: float, code: str) -> str:
+        one, few, many = cls._MONEY_NAMES.get(code, (code.lower(),) * 3)
+        rounded = int(round(amount))
+        if abs(amount - rounded) > 0.001:
+            return few
+        return plural_ru(rounded, one, few, many)
+
+    def _convert_money(self, text: str) -> str | None:
+        """«10 долларов в рубли» по курсу ЦБ.
+
+        Отдельно от физических единиц: раньше такая фраза попадала в общий
+        конвертер и он отвечал «назовите число и единицы», хотя и то и другое
+        было названо. None — если валюты во фразе нет или она одна.
+        """
+        tokens = re.findall(r"[а-яa-z]+|\d+(?:[.,]\d+)?", text)
+        marks = [(index, self._currency_code(token))
+                 for index, token in enumerate(tokens)
+                 if self._currency_code(token)]
+        if len(marks) < 2:
+            return None
+        source_index, source = marks[0]
+        target = marks[1][1]
+        if source == target:
+            return None
+
+        number = None
+        for index in range(source_index - 1, -1, -1):
+            if re.fullmatch(r"\d+(?:[.,]\d+)?", tokens[index]):
+                number = float(tokens[index].replace(",", "."))
+                break
+        if number is None:
+            for token in tokens:
+                if re.fullmatch(r"\d+(?:[.,]\d+)?", token):
+                    number = float(token.replace(",", "."))
+                    break
+        if number is None:
+            return "Назовите сумму, сэр. Например, «переведи 10 долларов в рубли»."
+
+        rates = self._cbr_rates()
+        if not rates:
+            return "Курсовой сервис недоступен, сэр."
+        if source not in rates or target not in rates:
+            return "Такой валюты в курсах ЦБ нет, сэр."
+
+        result = number * rates[source] / rates[target]
+        return (f"{_ru_number(number)} {self._money_word(number, source)} — это "
+                f"{_ru_number(result)} {self._money_word(result, target)} по курсу ЦБ.")
+
     def convert_units(self, raw: str) -> str:
         """Переводит единицы: «переведи 5 километров в мили», «сколько метров в 3 км»."""
         from utils import stem_ru
 
         text = normalize_text(raw)
+        money = self._convert_money(text)
+        if money:
+            return money
         index = self._unit_index()
         words = text.split()
         number = r"(\d+(?:[.,]\d+)?)"

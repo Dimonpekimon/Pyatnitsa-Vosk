@@ -82,6 +82,8 @@ export default function App(): JSX.Element {
   const [dialogWindow, setDialogWindow] = useState(12);
   /** Требуется ли обращение: `--no-wake` снимает требование. */
   const [wakeRequired, setWakeRequired] = useState(true);
+  // Голосовой ввод доступен: в текстовом режиме оклик не нужен вовсе.
+  const [voiceReady, setVoiceReady] = useState(true);
 
   const levelRef = useRef(0);
   const stateRef = useRef<AssistantState>(state);
@@ -129,6 +131,7 @@ export default function App(): JSX.Element {
           // Переподключение к ядру посреди разговора: окно должно сразу
           // показать, что оклик пока не нужен.
           if (typeof event.wake === "boolean") setWakeRequired(event.wake);
+          if (typeof event.voice === "boolean") setVoiceReady(event.voice);
           if (typeof event.until === "number") {
             setDialogUntil(event.until > Date.now() / 1000 ? event.until * 1000 : 0);
           }
@@ -231,6 +234,7 @@ export default function App(): JSX.Element {
             dialogUntil={dialogUntil}
             dialogWindow={dialogWindow}
             wakeRequired={wakeRequired}
+            voice={voiceReady}
             onSubmit={(text) => void submit(text)}
             onInterrupt={() => window.pyatnitsa.interrupt()}
             onReset={() => void window.pyatnitsa.reset()}
@@ -249,6 +253,7 @@ export default function App(): JSX.Element {
               variant="compact"
               until={dialogUntil}
               wakeRequired={wakeRequired}
+              voice={voiceReady}
               windowSec={dialogWindow}
             />
             <button type="button" className="expand" data-hit="1" title="Открыть диалог (Ctrl+Alt+U)" onClick={openDialog}>

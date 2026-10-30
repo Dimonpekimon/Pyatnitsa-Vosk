@@ -24,6 +24,8 @@ interface Props {
   until: number;
   /** Нужен ли оклик вообще: `--no-wake` снимает требование совсем. */
   wakeRequired: boolean;
+  /** Есть ли голосовой ввод: в текстовом режиме подсказка бессмысленна. */
+  voice?: boolean;
   /** Длина окна в секундах — для текста справки (по умолчанию 12). */
   windowSec?: number;
 }
@@ -45,7 +47,7 @@ function rules(windowSec: number): string[] {
   ];
 }
 
-export default function WakeCue({ variant, until, wakeRequired, windowSec = 12 }: Props): JSX.Element {
+export default function WakeCue({ variant, until, wakeRequired, voice = true, windowSec = 12 }: Props): JSX.Element | null {
   const [left, setLeft] = useState<number>(() => secondsLeft(until));
   const [rulesOpen, setRulesOpen] = useState(false);
 
@@ -59,6 +61,9 @@ export default function WakeCue({ variant, until, wakeRequired, windowSec = 12 }
     }, 250);
     return () => window.clearInterval(timer);
   }, [until]);
+
+  // В текстовом режиме микрофона нет — говорить «скажи «Пятница»» некому.
+  if (!voice) return null;
 
   const open = wakeRequired && left > 0;
 

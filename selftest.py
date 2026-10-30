@@ -358,6 +358,22 @@ def main() -> int:
     check("проверка интернета отвечает строкой",
           isinstance(actions.Actions.check_internet(), str), True)
 
+    section("Железо: процессор и батарея")
+    # Односложные формы Vosk слышит чисто, а реестр их не знал: фраза
+    # уходила в нейросеть вместо ответа.
+    check("«батарея» — это battery",
+          pyatnitsa.match_intent("батарея")[0].name, "battery")
+    check("«зарядка» — это battery",
+          pyatnitsa.match_intent("зарядка")[0].name, "battery")
+    check("«какая зарядка батареи» — battery",
+          pyatnitsa.match_intent("какая зарядка батареи")[0].name, "battery")
+    check("«какой у меня процессор» — system_info",
+          pyatnitsa.match_intent("какой у меня процессор")[0].name, "system_info")
+    check("«сколько ядер» — system_info",
+          pyatnitsa.match_intent("сколько ядер")[0].name, "system_info")
+    check("в сводке о железе есть процессор",
+          "ядер" in actions.Actions().processor(), True)
+
     section("Перевод единиц и проценты")
     converter = actions.Actions()
     check("километры в мили",
@@ -373,6 +389,24 @@ def main() -> int:
           in converter.convert_units("переведи 68 градусов фаренгейта в цельсий"), True)
     check("без чисел — подсказка",
           "Назовите число" in converter.convert_units("переведи"), True)
+
+    # Валюты: раньше «переведи 10 долларов в рубли» попадало в конвертер
+    # единиц и получало «назовите число и единицы», хотя и то и другое названо.
+    check("доллар распознан", actions.Actions._currency_code("долларов"), "USD")
+    check("рубль распознан", actions.Actions._currency_code("рублях"), "RUB")
+    check("фунты без второй валюты — это единицы массы",
+          converter._convert_money("10 фунтов в килограммы"), None)
+    real_rates = converter._cbr_rates
+    converter._cbr_rates = lambda: {"RUB": 1.0, "USD": 80.0, "EUR": 90.0}
+    try:
+        money = converter.convert_units("переведи 10 долларов в рубли")
+        check("доллары в рубли по курсу", "800" in money and "рубл" in money, True)
+        check("рубли в евро по курсу",
+              "евро" in converter.convert_units("переведи 900 рублей в евро"), True)
+        check("физические единицы не сломались",
+              "3,11" in converter.convert_units("переведи 5 километров в мили"), True)
+    finally:
+        converter._cbr_rates = real_rates
     check("15 процентов от 2000",
           converter.percent_of("сколько будет 15 процентов от 2000").endswith("это 300."), True)
     check("скидка считается",

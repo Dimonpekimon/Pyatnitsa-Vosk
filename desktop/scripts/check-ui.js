@@ -38,16 +38,16 @@ ipcMain.handle("app:get-config", () => ({
 // ему же событием. Заодно копим решения click-through.
 const ignoreStates = [];
 ipcMain.on("ui:set-mode", (event, mode) => {
-  event.sender.send("jarvis:ui-mode", mode === "dialog" ? "dialog" : "compact");
+  event.sender.send("pyatnitsa:ui-mode", mode === "dialog" ? "dialog" : "compact");
 });
 ipcMain.on("ui:set-overlay-mode", (event, mode) => {
-  event.sender.send("jarvis:overlay-mode", mode === "dim" ? "dim" : "normal");
+  event.sender.send("pyatnitsa:overlay-mode", mode === "dim" ? "dim" : "normal");
 });
 ipcMain.on("ui:ignore-mouse", (_event, ignore) => {
   ignoreStates.push(ignore);
 });
 ipcMain.on("app:quit", () => {});
-ipcMain.on("jarvis:interrupt", () => {});
+ipcMain.on("pyatnitsa:interrupt", () => {});
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -121,7 +121,7 @@ app.whenReady().then(async () => {
   const body = await js("document.body.innerHTML.slice(0, 300)");
   if (!body.ok || body.value.length < 10) console.log("body:", body);
   const rootInfo = await js(
-    "({ scripts: document.scripts.length, root: document.getElementById('root')?.innerHTML.length ?? -1, hasBridge: typeof window.jarvis })",
+    "({ scripts: document.scripts.length, root: document.getElementById('root')?.innerHTML.length ?? -1, hasBridge: typeof window.pyatnitsa })",
   );
   console.log("root:    ", rootInfo.value);
 
@@ -167,7 +167,7 @@ app.whenReady().then(async () => {
 
   // Сворачиваем обратно: под курсором та же точка, но карточка уже
   // не участвует в hit-testing → окно снова должно стать сквозным.
-  await js("window.jarvis.setUiMode('compact'); true");
+  await js("window.pyatnitsa.setUiMode('compact'); true");
   await sleep(500);
   ignoreStates.length = 0;
   await js(`(() => {

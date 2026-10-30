@@ -178,12 +178,16 @@ body,
   left: 8px;
   bottom: 7px;
   pointer-events: none;
-  opacity: 0.62;
+  /* Пилюля лежит поверх полос визуализатора: при прозрачном фоне текст
+     сливался с ними и «скажи «Пятница»» было не прочитать. */
+  background: rgba(9, 13, 21, 0.92);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+  opacity: 0.92;
   transition: opacity 0.15s ease, color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
 .app--dim .cue--compact {
-  opacity: 0.45;
+  opacity: 0.6;
 }
 
 .app:hover .cue--compact {
