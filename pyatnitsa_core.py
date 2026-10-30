@@ -1117,12 +1117,19 @@ class Pyatnitsa:
         if not text:
             return text
         kept: list[str] = []
+        removed = False
         for token in text.split():
             bare = token.strip(cls._WAKE_PUNCT).lower().replace("ё", "е")
             if bare and cls._is_wake_token(bare):
+                removed = True
                 continue
             kept.append(token)
-        return " ".join(kept).strip(cls._WAKE_PUNCT)
+        if not removed:
+            return text
+        # Запятую от снятого оклика убираем, а «?» в конце вопроса оставляем:
+        # он ещё пригодится нейросети.
+        result = " ".join(kept).strip()
+        return result.lstrip(cls._WAKE_PUNCT).rstrip(" \t\r\n,.—–…:;\"'()«»")
 
     @classmethod
     def _is_wake_token(cls, bare: str) -> bool:
