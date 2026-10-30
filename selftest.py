@@ -257,6 +257,27 @@ def main() -> int:
         intent, _alias = pyatnitsa.match_intent(phrase)
         check(f"«{phrase}» не выключает", intent.name if intent else None, None)
 
+    # ---------------- Чужая раскладка ----------------
+    # Частая беда: забыли переключить язык и набрали «gjrf» вместо «пока».
+    # Пользователь на этом уже спотыкался: фраза уходила в нейросеть.
+    section("Команда, набранная в английской раскладке")
+    layout_cases = [
+        ("gjrf", "пока", "exit"),
+        ("rjnjhsq xfc", "который час", "time"),
+        ("pfvjkxb", "замолчи", "volume_mute"),
+        ("uhjvxt", "громче", "volume_up"),
+        ("gjujlf", "погода", "weather"),
+    ]
+    for typed, meant, expected in layout_cases:
+        intent, _alias = pyatnitsa.match_intent(typed)
+        check(f"«{typed}» = «{meant}»", intent.name if intent else None, expected)
+
+    intent, _alias = pyatnitsa.match_intent("open chrome")
+    check("английское название программы не ломается",
+          intent.name if intent else None, "browser")
+    check("бессмыслица латиницей остаётся без команды",
+          pyatnitsa.match_intent("hello")[0], None)
+
     # ---------------- Обработчики команд ----------------
     # Каждая команда из реестра обязана иметь метод-обработчик: без него фраза
     # молча уходит в LLM. Именно так «повтори ответ» и «отмени последнюю задачу»

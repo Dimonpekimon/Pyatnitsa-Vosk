@@ -34,7 +34,8 @@ from scheduler import Scheduler
 from speech import Listener, SpeechError
 from telegram_bot import TelegramBridge
 from tts import get_speaker
-from utils import (contains_word, log, normalize_command_text, normalize_text,
+from utils import (contains_word, from_en_layout, log, normalize_command_text,
+                   normalize_text,
                    stem_matches, stem_ru)
 from vision import Vision
 
@@ -944,6 +945,13 @@ class Pyatnitsa:
         if cached is not None:
             return cached
         best = self._best_match(normalized)
+        if best is None and any("a" <= ch <= "z" for ch in normalized):
+            # Забыли переключить раскладку: «gjrf» вместо «пока». Переводим и
+            # пробуем снова — но только если исходная фраза не совпала ни с
+            # чем, иначе английские названия ломались бы («open chrome»).
+            switched = normalize_command_text(from_en_layout(normalized))
+            if switched and switched != normalized:
+                best = self._best_match(switched)
         result = (best[1], best[2]) if best else (None, None)
         if len(self._match_cache) >= self._MATCH_CACHE_MAX:
             self._match_cache.clear()
