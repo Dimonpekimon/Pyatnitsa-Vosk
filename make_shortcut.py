@@ -139,7 +139,10 @@ def create_shortcut(name: str, exe_copy: bool = True) -> int:
     print(f"  команда:      {target.name} {arguments}".rstrip())
     print(f"  рабочая папка: {BASE_DIR}")
     print("  окна консоли нет, лог — data/pyatnitsa.log, интерфейс откроется вместе с ассистентом.")
-    print(f"  в диспетчере задач процесс виден как «{target.name}».")
+    if built is not None:
+        print("  лаунчер сам находит Python и запускает ядро (pythonw.exe).")
+    else:
+        print(f"  в диспетчере задач процесс виден как «{target.name}».")
     return 0
 
 
