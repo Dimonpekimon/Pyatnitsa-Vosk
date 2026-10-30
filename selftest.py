@@ -546,6 +546,21 @@ def main() -> int:
     check("пятница, какая погода", Pyatnitsa._strip_wake_word("пятница, какая погода"), "какая погода")
     check("Пятница который час", Pyatnitsa._strip_wake_word("Пятница который час"), "который час")
     check("какая погода", Pyatnitsa._strip_wake_word("какая погода"), "какая погода")
+    # Обращение ловится в любом месте фразы, а не только в начале.
+    check("обращение в конце снимается",
+          Pyatnitsa._strip_wake_word("который час пятница"), "который час")
+    check("падеж вне списка: «пятнице»",
+          Pyatnitsa._strip_wake_word("пятнице который час"), "который час")
+    check("оглушённое «пятницо»", Pyatnitsa._strip_wake_word("пятницо время"), "время")
+    check("двойное обращение снимается",
+          Pyatnitsa._strip_wake_word("пятница пятница время"), "время")
+    check("«пятно» не считается обращением",
+          Pyatnitsa._strip_wake_word("пятно на стене"), "пятно на стене")
+    check("окно присоединения не короче секунды", config.WAKE_JOIN_SEC >= 1.0, True)
+    check("одно слово после обращения — команда",
+          pyatnitsa._is_single_word_request("погромче"), True)
+    check("«ну» — не команда одним словом",
+          pyatnitsa._is_single_word_request("ну"), False)
     check("слово-активатор — «пятница»", "пятница" in config.WAKE_WORDS, True)
     check("имя ассистента в промпте", config.ASSISTANT_NAME in config.LLM_SYSTEM_PROMPT, True)
 
@@ -625,6 +640,18 @@ def main() -> int:
     check("«кости» понимаются сразу, без отклика",
           dice._next_utterance(), "подбрось кости")
     check("...отклик не звучит", dice.acks, 0)
+
+    # «Пятница, погромче» — одно слово, которого может не быть в реестре.
+    # Раньше такая фраза терялась, и ассистент переспрашивал.
+    one_word = FakePyatnitsa("пятница погромче")
+    check("одно слово вместе с обращением идёт сразу",
+          one_word._next_utterance(), "погромче")
+    check("...без отклика", one_word.acks, 0)
+
+    one_word_join = FakePyatnitsa("пятница", "погромче", no_pause=True)
+    check("одно слово без паузы тоже команда",
+          one_word_join._next_utterance(), "погромче")
+    check("...и отклик не нужен", one_word_join.acks, 0)
 
     dice_after_ack = FakePyatnitsa("пятница", "пятница подбрось кости")
     check("повтор команды с обращением очищается",

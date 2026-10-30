@@ -1100,13 +1100,48 @@ class Pyatnitsa:
             self.speaker.say(response)
         return response
 
-    @staticmethod
-    def _strip_wake_word(text: str) -> str:
-        lowered = text.lower().replace("ё", "е")
-        for wake in sorted(config.WAKE_WORDS, key=len, reverse=True):
-            if lowered.startswith(wake):
-                return text[len(wake):].lstrip(" ,.!?-—")
-        return text
+    # Короче этого слово не может быть обращением по нечёткому совпадению:
+    # иначе «пятно» (5 букв) снималось бы как «пятница».
+    _WAKE_FUZZY_MIN_LEN = 6
+    _WAKE_PUNCT = " \t\r\n,.!?-—–…:;\"'()«»"
+
+    @classmethod
+    def _strip_wake_word(cls, text: str) -> str:
+        """Убирает обращение из фразы — где бы оно ни стояло.
+
+        Раньше снимался только префикс: «слушай, Пятница, который час» целиком
+        уходило в нейросеть вместе с окликом, а «который час, Пятница» вообще
+        не совпадало с командой. Заодно ловим падежи, которых нет в WAKE_WORDS
+        («пятницей», «пятницо»): Vosk слышит окончания вольно.
+        """
+        if not text:
+            return text
+        kept: list[str] = []
+        for token in text.split():
+            bare = token.strip(cls._WAKE_PUNCT).lower().replace("ё", "е")
+            if bare and cls._is_wake_token(bare):
+                continue
+            kept.append(token)
+        return " ".join(kept).strip(cls._WAKE_PUNCT)
+
+    @classmethod
+    def _is_wake_token(cls, bare: str) -> bool:
+        """Похоже ли отдельное слово на обращение (слово уже нормализовано)."""
+        for wake in config.WAKE_WORDS:
+            if bare == wake:
+                return True
+            # Только длинные основы: «пятниц» -> «пятница», но не «пят».
+            if len(bare) >= cls._WAKE_FUZZY_MIN_LEN - 1:
+                if bare.startswith(wake) or wake.startswith(bare):
+                    return True
+        if len(bare) < cls._WAKE_FUZZY_MIN_LEN:
+            return False
+        import difflib
+
+        for wake in config.WAKE_WORDS:
+            if difflib.SequenceMatcher(None, bare, wake).ratio() >= config.WAKE_WORD_CUTOFF:
+                return True
+        return False
 
     # ==================================================================
     #  LLM
@@ -2072,6 +2107,28 @@ class Pyatnitsa:
         words = normalize_command_text(text).split()
         return len(words) >= 2 and any(len(word) >= 4 for word in words)
 
+    # Односложные междометия и подтверждения — не просьба, даже если сказаны
+    # сразу после обращения.
+    _NOISE_WORDS = frozenset({
+        "ну", "да", "нет", "ага", "угу", "ээ", "мм", "хм", "вот", "так",
+        "ладно", "окей", "ок", "ясно", "понял", "поняла", "спасибо",
+        "пожалуйста", "слушай", "слушайте", "эй", "привет", "здравствуй",
+    })
+
+    @classmethod
+    def _is_single_word_request(cls, text: str) -> bool:
+        """Одно осмысленное слово после обращения — это команда.
+
+        «Пятница, погромче», «Пятница, время». Такие фразы часто не попадают
+        в реестр алиасов целиком, но терять их нельзя: человек уже обратился,
+        значит говорил он, а не комната.
+        """
+        words = normalize_command_text(text).split()
+        if len(words) != 1:
+            return False
+        word = words[0]
+        return len(word) >= 4 and word not in cls._NOISE_WORDS
+
     def _acknowledge_wake(self) -> None:
         """Отклик на обращение: «Да, сэр?».
 
@@ -2098,7 +2155,8 @@ class Pyatnitsa:
 
         Если прозвучало только «Пятница», отклик ждёт окно присоединения
         (WAKE_JOIN_SEC): человек почти всегда продолжает без паузы, и «Да, сэр?»
-        звучало бы поверх первых слов команды.
+        звучало бы поверх первых слов команды. Порядок приоритетов здесь
+        жёсткий — сначала команда, отклик только как запасной вариант.
         """
         if self.mode == "text" or not self._voice_available():
             if self.mode != "text" and not self._voice_available():
@@ -2129,6 +2187,12 @@ class Pyatnitsa:
             log(f"Незнакомая команда, отдаю нейросети: «{command}»", "debug")
             return command
 
+        # «Пятница, погромче» — одно слово, которого нет в реестре алиасов,
+        # но сказано оно уже после обращения, значит это команда, а не шум.
+        if self._is_single_word_request(command):
+            log(f"Команда одним словом: «{command}»", "debug")
+            return command
+
         # Прозвучало только «Пятница». Отклик «Да, сэр?» звучит поверх первых
         # слов команды, если человек не сделал паузы, — и их приходилось
         # повторять. Поэтому сначала короткое окно присоединения: заговорил —
@@ -2144,6 +2208,12 @@ class Pyatnitsa:
             if command and self._is_plausible_phrase(command):
                 log(f"Незнакомая команда без паузы, отдаю нейросети: «{command}»",
                     "debug")
+                return command
+            # Одно слово после обращения — это почти всегда команда
+            # («Пятница, погромче»), а не шум: в реестр оно могло и не попасть.
+            # Раньше такая фраза выбрасывалась, и человек слышал «не понял».
+            if command and self._is_single_word_request(command):
+                log(f"Команда одним словом без паузы: «{command}»", "debug")
                 return command
 
         # В окне присоединения тихо (или прозвучал только шум) — откликаемся
