@@ -1,0 +1,31 @@
+[package]
+name = "pyatnitsa-brain"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Мозг Пятницы на Rust: Gemini + любой OpenAI-совместимый шлюз"
+license = "MIT"
+repository = "https://github.com/Dimonpekimon/Pyatnitsa-Vosk"
+
+[lib]
+name = "pyatnitsa_brain"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pyatnitsa-brain"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+base64 = "0.22"
+thiserror = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

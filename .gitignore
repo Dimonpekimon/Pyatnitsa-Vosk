@@ -41,6 +41,10 @@ node_modules/
 # Логи
 *.log
 
+# Rust-мозг: сборочный каталог Cargo (1,3 ГБ артефактов). Бинарь собирается
+# командой `cd brain-rs && cargo build --release`.
+brain-rs/target/
+
 # Память и навыки рабочего окружения — не часть продукта
 .workbuddy-ai/
 
